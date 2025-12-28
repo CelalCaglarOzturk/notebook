@@ -1,0 +1,11 @@
+services:
+  notebook:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    volumes:
+      - ./planner.db:/app/planner.db
+
+    ports:
+      - 3011:3011
