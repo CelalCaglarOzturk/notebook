@@ -217,26 +217,22 @@
     };
 
     function getMonthSections(): MonthSection[] {
-        const today = dayjs();
         const sections: MonthSection[] = [];
 
-        for (let i = 0; i < 12; i++) {
-            const targetDate = today.add(i, "month");
-            const year = targetDate.year();
-            const monthIndex = targetDate.month(); // 0-11
+        // Get all months from plannerData and sort them chronologically
+        const sortedMonthKeys = Array.from(plannerData.months.keys()).sort(
+            (a, b) => {
+                const [yearA, monthA] = a.split("-").map(Number);
+                const [yearB, monthB] = b.split("-").map(Number);
+                if (yearA !== yearB) return yearA - yearB;
+                return monthA - monthB;
+            },
+        );
 
-            // Stop at Eylül (September) 2026
-            if (year > 2026 || (year === 2026 && monthIndex > 8)) {
-                break;
-            }
-
-            // Use 1-12 format for month key
-            const monthNumber = monthIndex + 1;
-            const monthKey = getMonthKey(year, monthNumber);
+        for (const monthKey of sortedMonthKeys) {
             const monthData = plannerData.months.get(monthKey);
-
             if (monthData) {
-                const weeks = getWeeksForMonth(year, monthIndex);
+                const weeks = getWeeksForMonth(monthData.year, monthData.month);
                 sections.push({
                     monthKey,
                     monthData,
