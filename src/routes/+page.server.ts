@@ -1,7 +1,11 @@
 import type { PageServerLoad } from "./$types";
 import { statements } from "$lib/server/database";
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ setHeaders }) => {
+  setHeaders({
+    "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+  });
+
   try {
     const months = statements.getAllMonths.all() as any[];
     const allDays = statements.getAllDays.all() as any[];

@@ -2,7 +2,11 @@ import { json } from "@sveltejs/kit";
 import { statements, getOrCreateMonth } from "$lib/server/database";
 import type { RequestHandler } from "./$types";
 
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ setHeaders }) => {
+  setHeaders({
+    "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+  });
+
   try {
     const months = statements.getAllMonths.all() as any[];
     const allDays = statements.getAllDays.all() as any[];
