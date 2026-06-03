@@ -24,6 +24,80 @@
     let plannerData = $state<PlannerData>({ months: new Map() });
     let saveStatus = $state<"idle" | "saving" | "saved" | "error">("idle");
     let isNavVisible = $state(false);
+    let isSettingsVisible = $state(false);
+    let newSpecialDate = $state("");
+    let newSpecialName = $state("");
+
+    const existingSpecialDates = $derived.by(() => {
+        const specials: { date: string; name: string }[] = [];
+        for (const [monthKey, monthData] of plannerData.months.entries()) {
+            // Get all days for the month using dayjs
+            const [yearStr, monthStr] = monthKey.split('-');
+            const year = parseInt(yearStr);
+            const month = parseInt(monthStr) - 1; // 0-indexed for dayjs
+            
+            const daysInMonth = dayjs().year(year).month(month).daysInMonth();
+            
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dateObj = dayjs().year(year).month(month).date(i);
+                const dateKey = getDateKey(dateObj);
+                
+                // Get from DB or fallback to default
+                const dayNote = monthData.days.get(dateKey) || initializeDay(dateObj);
+                
+                if (dayNote.isExamDay) {
+                    specials.push({ date: dateKey, name: dayNote.examName });
+                }
+            }
+        }
+        return specials.sort((a, b) => a.date.localeCompare(b.date));
+    });
+
+    async function saveSpecialDate() {
+        if (!newSpecialDate || !newSpecialName) return;
+        
+        const dateObj = dayjs(newSpecialDate);
+        if (!dateObj.isValid()) return;
+
+        const monthKey = getMonthKey(dateObj.year(), dateObj.month() + 1);
+        const dateKey = getDateKey(dateObj);
+        
+        let monthData = plannerData.months.get(monthKey);
+        
+        if (!monthData) {
+            alert("Bu tarih planlayıcı kapsamında değil.");
+            return;
+        }
+
+        const dayNote = monthData.days.get(dateKey) || initializeDay(dateObj);
+        
+        await handleDayUpdate(dateObj, {
+            ...dayNote,
+            isExamDay: true,
+            examName: newSpecialName
+        });
+        
+        newSpecialDate = "";
+        newSpecialName = "";
+    }
+
+    async function removeSpecialDate(dateStr: string) {
+        const dateObj = dayjs(dateStr);
+        const monthKey = getMonthKey(dateObj.year(), dateObj.month() + 1);
+        const dateKey = getDateKey(dateObj);
+        
+        const monthData = plannerData.months.get(monthKey);
+        if (!monthData) return;
+
+        const dayNote = monthData.days.get(dateKey);
+        if (dayNote) {
+            await handleDayUpdate(dateObj, {
+                ...dayNote,
+                isExamDay: false,
+                examName: ""
+            });
+        }
+    }
 
     onMount(async () => {
         // Load data from server props
@@ -263,6 +337,16 @@
 </svelte:head>
 
 <div class="page-layout">
+    <!-- Settings Toggle Button -->
+    <button
+        class="settings-toggle"
+        class:active={isSettingsVisible}
+        onclick={() => (isSettingsVisible = !isSettingsVisible)}
+        title="Ayarlar / Özel Tarih Belirle"
+    >
+        ⚙️
+    </button>
+
     <!-- Toggle Button for Month Nav -->
     <button
         class="nav-toggle"
@@ -272,6 +356,47 @@
     >
         {isNavVisible ? "✕" : "📅"}
     </button>
+
+    <!-- Settings Modal -->
+    {#if isSettingsVisible}
+        <div class="settings-modal-overlay" onclick={() => (isSettingsVisible = false)} aria-hidden="true">
+            <div class="settings-modal-content" onclick={(e) => e.stopPropagation()} aria-hidden="true">
+                <div class="settings-modal-header">
+                    <h2>Özel Tarih Belirle</h2>
+                    <button class="close-btn" onclick={() => (isSettingsVisible = false)}>✕</button>
+                </div>
+                
+                <div class="settings-form">
+                    <div class="form-group">
+                        <label for="special-date">Tarih:</label>
+                        <input type="date" id="special-date" bind:value={newSpecialDate} />
+                    </div>
+                    <div class="form-group">
+                        <label for="special-name">Etiket Adı:</label>
+                        <input type="text" id="special-name" bind:value={newSpecialName} placeholder="Örn: Yeni Sınav" />
+                    </div>
+                    <button class="save-special-btn" onclick={saveSpecialDate}>Kaydet</button>
+                </div>
+
+                <div class="existing-specials">
+                    <h3>Mevcut Özel Tarihler</h3>
+                    <div class="special-list">
+                        {#each existingSpecialDates as sd}
+                            <div class="special-item">
+                                <div class="special-info">
+                                    <span class="special-date-text">{dayjs(sd.date).format("DD.MM.YYYY")}</span>
+                                    <span class="special-name-tag">{sd.name}</span>
+                                </div>
+                                <button class="delete-special-btn" onclick={() => removeSpecialDate(sd.date)}>Sil</button>
+                            </div>
+                        {:else}
+                            <div class="no-specials">Özel tarih bulunmamaktadır.</div>
+                        {/each}
+                    </div>
+                </div>
+            </div>
+        </div>
+    {/if}
 
     <!-- Month Navigation Sidebar -->
     <nav class="month-nav" class:visible={isNavVisible}>
@@ -393,6 +518,208 @@
     .page-layout {
         display: flex;
         min-height: 100vh;
+    }
+
+    .settings-toggle {
+        position: fixed;
+        right: 70px;
+        top: 16px;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: #1a1a1a;
+        border: 2px solid #2a2a2a;
+        color: #ffffff;
+        font-size: 20px;
+        cursor: pointer;
+        z-index: 200;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .settings-toggle:hover {
+        background: #2a2a2a;
+        border-color: #404040;
+        transform: scale(1.1);
+    }
+
+    .settings-toggle.active {
+        background: #ffd700;
+        border-color: #ffd700;
+        color: #000;
+    }
+
+    .settings-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.7);
+        z-index: 300;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        backdrop-filter: blur(2px);
+    }
+
+    .settings-modal-content {
+        background: #0a0a0a;
+        border: 2px solid #2a2a2a;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 400px;
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+    }
+
+    .settings-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 20px;
+        border-bottom: 1px solid #1a1a1a;
+    }
+
+    .settings-modal-header h2 {
+        margin: 0;
+        font-size: 18px;
+        color: #fff;
+    }
+
+    .close-btn {
+        background: transparent;
+        border: none;
+        color: #888;
+        font-size: 20px;
+        cursor: pointer;
+        transition: color 0.2s;
+    }
+
+    .close-btn:hover {
+        color: #fff;
+    }
+
+    .settings-form {
+        padding: 20px;
+        border-bottom: 1px solid #1a1a1a;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .form-group label {
+        color: #ccc;
+        font-size: 14px;
+    }
+
+    .form-group input {
+        background: #111;
+        border: 1px solid #333;
+        color: #fff;
+        padding: 10px;
+        border-radius: 6px;
+        font-size: 14px;
+        outline: none;
+    }
+
+    .form-group input:focus {
+        border-color: #ffd700;
+    }
+
+    .save-special-btn {
+        background: #ffd700;
+        color: #000;
+        border: none;
+        padding: 10px;
+        border-radius: 6px;
+        font-weight: bold;
+        cursor: pointer;
+        margin-top: 8px;
+        transition: background 0.2s;
+    }
+
+    .save-special-btn:hover {
+        background: #ffea00;
+    }
+
+    .existing-specials {
+        padding: 20px;
+        overflow-y: auto;
+    }
+
+    .existing-specials h3 {
+        margin: 0 0 12px 0;
+        font-size: 15px;
+        color: #aaa;
+    }
+
+    .special-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .special-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #111;
+        padding: 10px 12px;
+        border-radius: 6px;
+        border: 1px solid #222;
+    }
+
+    .special-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .special-date-text {
+        color: #aaa;
+        font-size: 13px;
+        font-family: monospace;
+    }
+
+    .special-name-tag {
+        color: #ffd700;
+        background: rgba(255, 215, 0, 0.1);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: bold;
+    }
+
+    .delete-special-btn {
+        background: rgba(255, 107, 107, 0.1);
+        color: #ff6b6b;
+        border: 1px solid rgba(255, 107, 107, 0.2);
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .delete-special-btn:hover {
+        background: #ff6b6b;
+        color: #000;
+    }
+
+    .no-specials {
+        color: #666;
+        font-size: 14px;
+        text-align: center;
+        padding: 20px 0;
     }
 
     .nav-toggle {
@@ -672,6 +999,13 @@
 
         .nav-toggle {
             right: 12px;
+            top: 12px;
+            width: 40px;
+            height: 40px;
+        }
+
+        .settings-toggle {
+            right: 60px;
             top: 12px;
             width: 40px;
             height: 40px;

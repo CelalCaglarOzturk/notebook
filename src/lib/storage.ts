@@ -103,17 +103,6 @@ export function initializeDay(date: Date | dayjs.Dayjs): DayNote {
   let isExamDay = false;
   let examName = "";
 
-  // 12 Temmuz - AGS SINAVI
-  if (d.month() === 6 && d.date() === 12) {
-    isExamDay = true;
-    examName = "AGS SINAVI";
-  }
-  // 6 Eylül - KPSS SINAVI
-  else if (d.month() === 8 && d.date() === 6) {
-    isExamDay = true;
-    examName = "KPSS SINAVI";
-  }
-
   return {
     date: dateKey,
     note: "",
