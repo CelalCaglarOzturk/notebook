@@ -1,0 +1,6 @@
+[install]
+# Supply-chain hardening: refuse to install any package version published
+# less than this many SECONDS ago. 259200s = 3 days, so brand-new releases
+# (the usual window for malicious takeovers / freshly disclosed CVEs) are
+# skipped until they have had time to be reported and yanked.
+minimumReleaseAge = 259200
