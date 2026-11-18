@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: always
+    network_mode: host
     volumes:
       - ./planner.db:/app/planner.db
 

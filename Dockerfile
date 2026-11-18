@@ -11,11 +11,10 @@ COPY package.json bun.lock bunfig.toml ./
 # This server builds arm64 images; for an x86_64 server change arm64 to x64.
 # If the native binding is still missing afterwards, fall back to resolving
 # fresh on the build platform (unpinned) — that always installs matching natives.
-RUN bun install --os=linux --cpu=arm64 --libc=glibc; \
-    test -d node_modules/@rollup/rollup-linux-arm64-gnu || \
-    (rm -f bun.lock && bun install)
+RUN bun install
 
 COPY . .
+
 RUN bun run build
 
 EXPOSE 3011
