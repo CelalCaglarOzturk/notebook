@@ -19,12 +19,32 @@
     dayjs.extend(weekday);
     dayjs.extend(isoWeek);
 
+    // Planlama dönemi: 1 Kasım 2026 – 31 Mayıs 2027
+    // (AGS SINAVI: 8 Mayıs 2027, ÖABT SINAVI: 9 Mayıs 2027)
+    const SEASON_START = { year: 2026, month: 10 }; // month 0-11 → Kasım 2026
+    const SEASON_END = { year: 2027, month: 4 }; // month 0-11 → Mayıs 2027
+
+    // Exam days of the season, seeded into freshly created season months.
+    // Existing days (notes etc.) are never overwritten — only the exam flag/name is filled in.
+    const SEASON_EXAM_DAYS = [
+        { date: "2027-05-08", examName: "AGS SINAVI" },
+        { date: "2027-05-09", examName: "ÖABT SINAVI" },
+    ];
+
+    // Comparable month index (year * 12 + month 0-11) for season range checks
+    function seasonIndex(year: number, month0: number): number {
+        return year * 12 + month0;
+    }
+
     let { data }: { data: PageData } = $props();
 
     let plannerData = $state<PlannerData>({ months: new Map() });
     let saveStatus = $state<"idle" | "saving" | "saved" | "error">("idle");
     let isNavVisible = $state(false);
     let isSettingsVisible = $state(false);
+    // "See Previous" setting: when off, only the season (Kasım 2026 – Mayıs 2027)
+    // is displayed; when on, months stored before the season are shown as saved.
+    let seePrevious = $state(false);
     let newSpecialDate = $state("");
     let newSpecialName = $state("");
 
@@ -99,7 +119,23 @@
         }
     }
 
+    function handleSeePreviousChange(event: Event) {
+        seePrevious = (event.target as HTMLInputElement).checked;
+        try {
+            localStorage.setItem("seePrevious", seePrevious ? "1" : "0");
+        } catch {
+            // localStorage unavailable — the setting just won't persist
+        }
+    }
+
     onMount(async () => {
+        // Restore the "See Previous" preference (per-device display setting)
+        try {
+            seePrevious = localStorage.getItem("seePrevious") === "1";
+        } catch {
+            // localStorage unavailable — default to season-only view
+        }
+
         // Load data from server props
         const months = new Map<string, MonthData>();
 
@@ -123,7 +159,7 @@
         }
 
         plannerData = { months };
-        await ensureNext12Months();
+        await ensureSeasonMonths();
 
         // Scroll to current week after DOM updates
         await tick();
@@ -155,31 +191,35 @@
         }
     }
 
-    async function ensureNext12Months() {
-        const today = dayjs();
-        const currentMonth = today.month(); // 0-11
-        const currentYear = today.year();
-
+    async function ensureSeasonMonths() {
         let updated = false;
 
-        for (let i = 0; i < 12; i++) {
-            const targetDate = today.add(i, "month");
-            const year = targetDate.year();
-            const monthIndex = targetDate.month(); // 0-11
+        const startIdx = seasonIndex(SEASON_START.year, SEASON_START.month);
+        const endIdx = seasonIndex(SEASON_END.year, SEASON_END.month);
 
-            // Stop at Eylül (September) 2026
-            if (year > 2026 || (year === 2026 && monthIndex > 8)) {
-                break;
-            }
+        for (let idx = startIdx; idx <= endIdx; idx++) {
+            const year = Math.floor(idx / 12);
+            const monthIndex = idx % 12; // 0-11
 
             // Convert to 1-12 format for consistency with date strings
             const monthNumber = monthIndex + 1;
             const monthKey = getMonthKey(year, monthNumber);
             if (!plannerData.months.has(monthKey)) {
-                plannerData.months.set(
-                    monthKey,
-                    initializeMonth(year, monthIndex), // monthIndex stays 0-11 for display
-                );
+                const monthData = initializeMonth(year, monthIndex); // monthIndex stays 0-11 for display
+
+                // Seed exam days only into freshly created months, so a date
+                // removed later via the settings modal is not re-added on reload
+                for (const exam of SEASON_EXAM_DAYS) {
+                    if (exam.date.startsWith(monthKey)) {
+                        monthData.days.set(exam.date, {
+                            ...initializeDay(dayjs(exam.date)),
+                            isExamDay: true,
+                            examName: exam.examName,
+                        });
+                    }
+                }
+
+                plannerData.months.set(monthKey, monthData);
                 updated = true;
             }
         }
@@ -303,9 +343,19 @@
             },
         );
 
+        // Default view shows only the season (Kasım 2026 – Mayıs 2027);
+        // the "See Previous" setting also reveals months stored before it.
+        const startIdx = seasonIndex(SEASON_START.year, SEASON_START.month);
+        const endIdx = seasonIndex(SEASON_END.year, SEASON_END.month);
+
         for (const monthKey of sortedMonthKeys) {
             const monthData = plannerData.months.get(monthKey);
             if (monthData) {
+                if (!seePrevious) {
+                    const idx = seasonIndex(monthData.year, monthData.month);
+                    if (idx < startIdx || idx > endIdx) continue;
+                }
+
                 const weeks = getWeeksForMonth(monthData.year, monthData.month);
                 sections.push({
                     monthKey,
@@ -367,6 +417,20 @@
                 </div>
                 
                 <div class="settings-form">
+                    <div class="form-group">
+                        <label class="see-previous-label" for="see-previous-toggle">
+                            <input
+                                type="checkbox"
+                                id="see-previous-toggle"
+                                checked={seePrevious}
+                                onchange={handleSeePreviousChange}
+                            />
+                            <span class="see-previous-text">
+                                <strong>See Previous</strong>
+                                <small>Geçmiş ayları kaydedildikleri eski haliyle göster</small>
+                            </span>
+                        </label>
+                    </div>
                     <div class="form-group">
                         <label for="special-date">Tarih:</label>
                         <input type="date" id="special-date" bind:value={newSpecialDate} />
@@ -633,6 +697,38 @@
 
     .form-group input:focus {
         border-color: #ffd700;
+    }
+
+    .see-previous-label {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+    }
+
+    .see-previous-label input {
+        width: 18px;
+        height: 18px;
+        padding: 0;
+        border: none;
+        background: transparent;
+        accent-color: #ffd700;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+
+    .see-previous-text strong {
+        display: block;
+        color: #fff;
+        font-size: 14px;
+    }
+
+    .see-previous-text small {
+        display: block;
+        color: #888;
+        font-size: 12px;
+        margin-top: 2px;
     }
 
     .save-special-btn {
